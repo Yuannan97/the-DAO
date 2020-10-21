@@ -94,6 +94,19 @@ contract Dao is DaoInterface {
         require ( proposals[proposalCount].votedYes[msg.sender] == false );
         require ( proposals[proposalCount].votedNo[msg.sender] == false );
         
+       /*
+        //there is a race condition vulnerability
+        msg.sender.transfer(amount * (valuation / 10));
+        totalBalance -= amount;
+        balances[msg.sender] -= amount;
+        */
+        
+        //remedy1
+        balances[msg.sender] -= amount;
+        totalBalance -= amount;
+        msg.sender.transfer(amount * (valuation / 10));
+        
+       /* 
         //this is where the vulnerability lies
        if (!(msg.sender.call.value(amount* (valuation / 10)))){
            balances[msg.sender] -= amount;
@@ -101,7 +114,6 @@ contract Dao is DaoInterface {
        }
         
         //remedy1
-        /*
         balances[msg.sender] -= amount;
         totalBalance -= amount;
         if (!(msg.sender.call.value(amount* (valuation / 10)))){
