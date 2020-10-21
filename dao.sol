@@ -1,16 +1,17 @@
-pragma solidity ^0.7.0;
+pragma solidity ^0.6.10;
 
-contract DaoInterface {
+abstract contract DaoInterface {
     
     address public creator;
     address public curator;
-    uint256 valuation;
+    uint256 public valuation;
     uint256 public totalBalance;
     uint256 public proposalCount;
-    mapping ( address => uint256 ) balances;
+    mapping ( address => uint256 ) public balances;
     mapping ( uint256 => Proposal) public proposals;
     mapping (address => bool) allowedRecipients;
     mapping ( address => bool) membership;
+    address[] public membershipIndex;
     
     struct Proposal {
         address recipient;
@@ -33,12 +34,11 @@ contract DaoInterface {
         
         address creator;
     }
-    
     // use balance(-) change token(+) 
     function deposit() payable public virtual returns (bool success);
     
     //withdraw amount is the token amount
-    function withdraw (uint amount)  public returns (bool success);
+    function withdraw (uint amount) public virtual returns (bool success);
     
     function getBalance ()  public virtual returns (uint256 balance);
     
@@ -47,7 +47,6 @@ contract DaoInterface {
     function voteYes() public virtual;
     
     function voteNo() public virtual;
-    
 }
 
 
@@ -86,29 +85,45 @@ contract Dao is DaoInterface {
         
         balances[msg.sender] += msg.value / ( valuation / 10 ); 
         totalBalance += msg.value / ( valuation / 10 );
+        
+        for (uint i=0; i<membershipIndex.length; i++){
+            if (membershipIndex[i] == msg.sender){
+                return true;
+            }
+        }
+        membershipIndex.push(msg.sender);
         membership[msg.sender] = true;
         return true;
         }
-    }
   
     function withdraw (uint amount) public override returns (bool success) {
         require ( amount <= balances[msg.sender] );
-        require ( proposals[proposalCount].votedYes[msg.sender] == false or proposals[proposalCount].votedNo == false );
+        require ( proposals[proposalCount].votedYes[msg.sender] == false );
+        require ( proposals[proposalCount].votedNo[msg.sender] == false );
         
         balances[msg.sender] -= amount;
         totalBalance -= amount;
         msg.sender.transfer(amount * (valuation / 10));
         if (balances[msg.sender] == 0){
+            
+            //remove the address in membershipIndex
+            for ( uint256 i=0; i<membershipIndex.length; i++){
+                if (membershipIndex[i] == msg.sender){
+                    delete membershipIndex[i];
+                    break;
+                }
+            }
+            
             membership[msg.sender]=false;
         }
         return true;
-    } 
+    }
     
-     function getBalance () public override returns (uint256 balance){
+    function getBalance () public override returns (uint256 balance){
          return balances[msg.sender];
      }
      
-     function createProposal(address _recipient, uint _amount, string memory _descrption)  public onlyCurator override{
+    function createProposal(address _recipient, uint _amount, string memory _descrption)  public onlyCurator override{
          require (totalBalance >= _amount);
          require (proposals[proposalCount].isFinished);
          proposalCount++;
@@ -122,7 +137,7 @@ contract Dao is DaoInterface {
          proposals[proposalCount].isFinished = false;
      }
      
-     function voteYes() onlyMembership public override {
+    function voteYes() onlyMembership public override {
          require( proposals[proposalCount].isSealed == false);
          
          proposals[proposalCount].yes += balances[msg.sender];
@@ -130,20 +145,30 @@ contract Dao is DaoInterface {
          
          if (proposals[proposalCount].yes > (totalBalance/2)){
             proposals[proposalCount].isSealed = true;
+            uint256 randNum;
             randNum = rand(10);
             valuation = valuation * randNum;
             
             if (valuation == 0 ) {
-                valuation = 10
-                totalBalance = 0
-                delete balances;
-                mapping(address => uint256) balances;
+                totalBalance = 0;
+                for (uint i=0; i<membershipIndex.length; i++){
+                    delete balances[membershipIndex[i]];
+                }
+                valuation = 10;
             }
             
          }
      }
+    
+    function testDelete() public {
+         totalBalance = 0;
+                for (uint i=0; i<membershipIndex.length; i++){
+                    delete balances[membershipIndex[i]];
+                }
+                valuation = 10;
+    }
      
-     function voteNo() onlyMembership public override {
+    function voteNo() onlyMembership public override {
          require(proposals[proposalCount].isSealed == false);
          proposals[proposalCount].no += balances[msg.sender];
          proposals[proposalCount].votedNo[msg.sender] = true;
@@ -154,12 +179,10 @@ contract Dao is DaoInterface {
          }
      }
      
-     function rand(uint256 _length) public view returns(uint256) {  
+    function rand(uint256 _length) public view returns(uint256) {  
         uint256 random = uint256(keccak256(abi.encodePacked(block.difficulty, now)));  
         return random%_length;  
     }  
-    
-    
 }
 
 
