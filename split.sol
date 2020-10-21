@@ -1,184 +1,222 @@
-contract ManagedAccountInterface {
-    // The only address with permission to withdraw from this account
-    address public owner;
-    // If true, only the owner of the account can receive ether from it
-    bool public payOwnerOnly;
-    // The sum of ether (in wei) which has been sent to this contract
-    uint public accumulatedInput;
-}
+pragma solidity ^0.6.10;
 
-contract ManagedAccount is ManagedAccountInterface {
-}
-
-contract TokenInterface {
-    mapping (address => uint256) balances;
-    mapping (address => mapping (address => uint256)) allowed;
-
-    /// Total amount of tokens
-    uint256 public totalSupply;
-}
-
-contract Token is TokenInterface {
-}
-
-contract TokenCreationInterface {
-    // End of token creation, in Unix time
-    uint public closingTime;
-    // Minimum fueling goal of the token creation, denominated in tokens to
-    // be created
-    uint public minTokensToCreate;
-    // True if the DAO reached its minimum fueling goal, false otherwise
-    bool public isFueled;
-    // For DAO splits - if privateCreation is 0, then it is a public token
-    // creation, otherwise only the address stored in privateCreation is
-    // allowed to create tokens
-    address public privateCreation;
-    // hold extra ether which has been sent after the DAO token
-    // creation rate has increased
-    ManagedAccount public extraBalance;
-    // tracks the amount of wei given from each contributor (used for refund)
-    mapping (address => uint256) weiGiven;
-}
-
-contract TokenCreation is TokenCreationInterface, Token {
-}
-
-contract DAOInterface {
-    // The amount of days for which people who try to participate in the
-    // creation by calling the fallback function will still get their ether back
-    uint constant creationGracePeriod = 40 days;
-    // The minimum debate period that a generic proposal can have
-    uint constant minProposalDebatePeriod = 2 weeks;
-    // The minimum debate period that a split proposal can have
-    uint constant minSplitDebatePeriod = 1 weeks;
-    // Period of days inside which it's possible to execute a DAO split
-    uint constant splitExecutionPeriod = 27 days;
-    // Period of time after which the minimum Quorum is halved
-    uint constant quorumHalvingPeriod = 25 weeks;
-    // Period after which a proposal is closed
-    // (used in the case `executeProposal` fails because it throws)
-    uint constant executeProposalPeriod = 10 days;
-    // Denotes the maximum proposal deposit that can be given. It is given as
-    // a fraction of total Ether spent plus balance of the DAO
-    uint constant maxDepositDivisor = 100;
-
-    // Proposals to spend the DAO's ether or to choose a new Curator
-    Proposal[] public proposals;
-    // The quorum needed for each proposal is partially calculated by
-    // totalSupply / minQuorumDivisor
-    uint public minQuorumDivisor;
-    // The unix time of the last time quorum was reached on a proposal
-    uint  public lastTimeMinQuorumMet;
-
-    // Address of the curator
+abstract contract DaoInterface {
+    
+    address public creator;
     address public curator;
-    // The whitelist: List of addresses the DAO is allowed to send ether to
-    mapping (address => bool) public allowedRecipients;
-
-    // Tracks the addresses that own Reward Tokens. Those addresses can only be
-    // DAOs that have split from the original DAO. Conceptually, Reward Tokens
-    // represent the proportion of the rewards that the DAO has the right to
-    // receive. These Reward Tokens are generated when the DAO spends ether.
-    mapping (address => uint) public rewardToken;
-    // Total supply of rewardToken
-    uint public totalRewardToken;
-
-    // The account used to manage the rewards which are to be distributed to the
-    // DAO Token Holders of this DAO
-    ManagedAccount public rewardAccount;
-
-    // The account used to manage the rewards which are to be distributed to
-    // any DAO that holds Reward Tokens
-    ManagedAccount public DAOrewardAccount;
-
-    // Amount of rewards (in wei) already paid out to a certain DAO
-    mapping (address => uint) public DAOpaidOut;
-
-    // Amount of rewards (in wei) already paid out to a certain address
-    mapping (address => uint) public paidOut;
-    // Map of addresses blocked during a vote (not allowed to transfer DAO
-    // tokens). The address points to the proposal ID.
-    mapping (address => uint) public blocked;
-
-    // The minimum deposit (in wei) required to submit any proposal that is not
-    // requesting a new Curator (no deposit is required for splits)
-    uint public proposalDeposit;
-
-    // the accumulated sum of all current proposal deposits
-    uint sumOfProposalDeposits;
-
-    // Contract that is able to create a new DAO (with the same code as
-    // this one), used for splits
-    DAO_Creator public daoCreator;
-
-    // A proposal with `newCurator == false` represents a transaction
-    // to be issued by this DAO
-    // A proposal with `newCurator == true` represents a DAO split
+    uint256 public valuation;
+    uint256 public totalBalance;
+    uint256 public proposalCount;
+    mapping ( address => uint256 ) public balances;
+    mapping ( uint256 => Proposal) public proposals;
+    mapping (address => bool) allowedRecipients;
+    mapping ( address => bool) membership;
+    address[] public membershipIndex;
+    mapping ( address => bool) isSplited;
+    address payable[] public splitIndex;
+    
+    
+    
     struct Proposal {
-        // The address where the `amount` will go to if the proposal is accepted
-        // or if `newCurator` is true, the proposed Curator of
-        // the new DAO).
         address recipient;
-        // The amount to transfer to `recipient` if the proposal is accepted.
+        
+        //amount to transfer to 'recipient' if the Proposal is accepted
         uint amount;
-        // A plain text description of the proposal
         string description;
-        // A unix timestamp, denoting the end of the voting period
-        uint votingDeadline;
-        // True if the proposal's votes have yet to be counted, otherwise False
-        bool open;
-        // True if quorum has been reached, the votes have been counted, and
-        // the majority said yes
-        bool proposalPassed;
-        // A hash to check validity of a proposal
-        bytes32 proposalHash;
-        // Deposit in wei the creator added when submitting their proposal. It
-        // is taken from the msg.value of a newProposal call.
-        uint proposalDeposit;
-        // True if this proposal is to assign a new Curator
-        bool newCurator;
-        // Data needed for splitting the DAO
-        SplitData[] splitData;
-        // Number of Tokens in favor of the proposal
-        uint yea;
-        // Number of Tokens opposed to the proposal
-        uint nay;
-        // Simple mapping to check if a shareholder has voted for it
+        
+        //true if the Proposal's votes have yet to be counted and sealed.
+        bool isSealed;
+        
+        //true if the proposal is Finished. 
+        bool isFinished;
+        
+        //numbers of tokens in favor of/opposed to the proposal
+        uint yes;
         mapping (address => bool) votedYes;
-        // Simple mapping to check if a shareholder has voted against it
-        mapping (address => bool) votedNo;
-        // Address of the shareholder who created the proposal
+        uint no;
+        mapping ( address => bool) votedNo;
+        
         address creator;
     }
+    // use balance(-) change token(+) 
+    function deposit() payable public virtual returns (bool success);
+    
+    //withdraw amount is the token amount
+    function withdraw (uint amount) public virtual returns (bool success);
+    
+    function withdrawSpilt (address payable addr, uint256 prevValuation) public virtual returns (bool success); 
+    
+    function getBalance ()  public virtual returns (uint256 balance);
+    
+    function createProposal(address _recipient, uint _amount, string memory _descrption)  public virtual;
+    
+    function voteYes() public virtual;
+    
+    function voteNo() public virtual;
+    
+    function split() public virtual;
+}
 
-    // Used only in the case of a newCurator proposal.
-    struct SplitData {
-        // The balance of the current DAO minus the deposit at the time of split
-        uint splitBalance;
-        // The total amount of DAO Tokens in existence at the time of split.
-        uint totalSupply;
-        // Amount of Reward Tokens owned by the DAO at the time of split.
-        uint rewardToken;
-        // The new DAO contract created at the time of split.
-        DAO newDAO;
+
+contract Dao is DaoInterface {
+     constructor()  public {
+        creator = msg.sender;
+        curator = creator;
+        totalBalance = 0;
+        valuation = 10;
+        proposalCount = 0;
+        proposals[proposalCount].isFinished = true;
+    } 
+    
+    modifier onlyMembership {
+        require (membership[msg.sender] == true, "you need to be a membership");
+        _;
+    }
+    
+    modifier onlyCurator {
+        require(msg.sender == curator);
+        _;
+    }
+    
+    function delegateCurator (address newCurator) onlyCurator public returns (bool success) {
+        require( proposals[proposalCount].isSealed == false );
+        curator = newCurator;
+        success = true;
+    }
+    
+    function deposit() payable public override returns (bool success){
+        if ( proposals[proposalCount].votedYes[msg.sender]) {
+            proposals[proposalCount].yes += msg.value / (valuation / 10);
+        } else if ( proposals[proposalCount].votedNo[msg.sender] ) {
+            proposals[proposalCount].no += msg.value / (valuation / 10);
+        }
+        
+        balances[msg.sender] += msg.value / ( valuation / 10 ); 
+        totalBalance += msg.value / ( valuation / 10 );
+        
+        for (uint i=0; i<membershipIndex.length; i++){
+            if (membershipIndex[i] == msg.sender){
+                return true;
+            }
+        }
+        membershipIndex.push(msg.sender);
+        membership[msg.sender] = true;
+        return true;
+        }
+  
+    function withdraw (uint amount) public override returns (bool success) {
+        require ( amount <= balances[msg.sender] );
+        require ( proposals[proposalCount].votedYes[msg.sender] == false );
+        require ( proposals[proposalCount].votedNo[msg.sender] == false );
+        
+        balances[msg.sender] -= amount;
+        totalBalance -= amount;
+        msg.sender.transfer(amount * (valuation / 10));
+        if (balances[msg.sender] == 0){
+            
+            //remove the address in membershipIndex
+            for ( uint256 i=0; i<membershipIndex.length; i++){
+                if (membershipIndex[i] == msg.sender){
+                    delete membershipIndex[i];
+                    break;
+                }
+            }
+            
+            membership[msg.sender]=false;
+        }
+        return true;
+    }
+    
+    function withdrawSpilt (address payable addr, uint256 prevValuation) public override returns (bool success) {
+        uint256 amount = balances[addr];
+        balances[addr] = 0;
+        totalBalance -= amount;
+        addr.transfer(amount * (prevValuation / 10));
+        //remove the address in membershipIndex
+        for ( uint256 i=0; i<membershipIndex.length; i++){
+            if (membershipIndex[i] == msg.sender){
+                delete membershipIndex[i];
+                break;
+            }
+        membership[msg.sender]=false;
+        }
+        return true;
+    }
+    
+    function getBalance () public override returns (uint256 balance){
+         return balances[msg.sender];
+     }
+     
+    function createProposal(address _recipient, uint _amount, string memory _descrption)  public onlyCurator override{
+         require (totalBalance >= _amount);
+         require (proposals[proposalCount].isFinished);
+         proposalCount++;
+         
+         proposals[proposalCount].recipient = _recipient;
+         proposals[proposalCount].amount = _amount;
+         proposals[proposalCount].description = _descrption;
+         
+         proposals[proposalCount].creator = curator;
+         proposals[proposalCount].isSealed = false;
+         proposals[proposalCount].isFinished = false;
+     }
+     
+    function voteYes() onlyMembership public override {
+         require( proposals[proposalCount].isSealed == false);
+         
+         proposals[proposalCount].yes += balances[msg.sender];
+         proposals[proposalCount].votedYes[msg.sender] = true;
+         
+         // voted more that 50% then sealed automatically
+         if (proposals[proposalCount].yes > (totalBalance/2)){
+            proposals[proposalCount].isSealed = true;
+            uint256 prevValuaton;
+            uint256 randNum;
+            prevValuaton = valuation;
+            randNum = rand(10);
+            valuation = valuation * randNum;
+            
+            if (valuation != 0) {
+                for(uint256 i = 0; i< splitIndex.length; i++){
+                    withdrawSpilt(splitIndex[i], prevValuaton);
+                }
+            } else {
+                totalBalance = 0;
+                for (uint i=0; i<membershipIndex.length; i++){
+                    delete balances[membershipIndex[i]];
+                }
+                valuation = 10;
+            }
+            
+         }
+     }
+    
+    function voteNo() onlyMembership public override {
+         require(proposals[proposalCount].isSealed == false);
+         proposals[proposalCount].no += balances[msg.sender];
+         proposals[proposalCount].votedNo[msg.sender] = true;
+         
+         if (proposals[proposalCount].no > (totalBalance/2)){
+             proposals[proposalCount].isSealed = true;
+             proposals[proposalCount].isFinished = true;
+         }
+     }
+     
+    function rand(uint256 _length) public view returns(uint256) {  
+        uint256 random = uint256(keccak256(abi.encodePacked(block.difficulty, now)));  
+        return random%_length;  
+    }  
+    
+    function split() public override{
+        require(proposals[proposalCount].isSealed == false);
+        require(proposals[proposalCount].votedYes[msg.sender] == true || proposals[proposalCount].votedNo[msg.sender] == true );
+        require( isSplited[msg.sender] == false );
+        
+        isSplited[msg.sender] = true;
+        splitIndex.push(msg.sender);
     }
 }
 
-contract DAO is DAOInterface, Token, TokenCreation {
-	/// Just withdraws the weiGiven of the msg.sender, recording
-	/// that no more should be given on subsequent calls.
-	function() {
-		// Figure out how much to return.
-		var senderTokens = balances[msg.sender];
-		// Determine how much ether to pay out: senderTokens * totalEther / totalTokens.
-		var payOut = senderTokens * this.balance / totalAvailable;
-		// Clear now, so that all subsequent CALLs return nothing.
-		balances[msg.sender] = 0;
-		// Reduce totalAvailable DAO tokens by this amount.
-		totalAvailable -= senderTokens;
-		// Send back the refund to caller.
-		msg.sender.send(payOut);
-	}
-}
+
 
 
