@@ -85,6 +85,7 @@ contract Dao is DaoInterface {
     }
     
     function deposit() payable public override returns (bool success){
+        require( isSplited[msg.sender] == false);
         if ( proposals[proposalCount].votedYes[msg.sender]) {
             proposals[proposalCount].yes += msg.value / (valuation / 10);
         } else if ( proposals[proposalCount].votedNo[msg.sender] ) {
