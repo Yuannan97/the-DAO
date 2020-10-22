@@ -117,7 +117,7 @@ contract Dao is DaoInterface {
             
             //remove the address in membershipIndex
             for ( uint256 i=0; i<membershipIndex.length; i++){
-                if (membershipIndex[i] == msg.sender){
+                if (membershipIndex[i] == addr){
                     delete membershipIndex[i];
                     break;
                 }
