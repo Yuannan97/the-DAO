@@ -117,7 +117,7 @@ contract Dao is DaoInterface {
             
             //remove the address in membershipIndex
             for ( uint256 i=0; i<membershipIndex.length; i++){
-                if (membershipIndex[i] == addr){
+                if (membershipIndex[i] == msg.sender){
                     delete membershipIndex[i];
                     break;
                 }
@@ -135,10 +135,16 @@ contract Dao is DaoInterface {
         addr.transfer(amount * (prevValuation / 10));
         //remove the address in membershipIndex
         for ( uint256 i=0; i<membershipIndex.length; i++){
-            if (membershipIndex[i] == msg.sender){
+            if (membershipIndex[i] == addr){
                 delete membershipIndex[i];
                 break;
             }
+        for (uint256 j=0; j<splitIndex.length; j++){
+            if(splitIndex[j] == addr){
+                delete splitIndex[j];
+            }
+        }
+        delete isSplited[addr];
         membership[msg.sender]=false;
         }
         return true;
